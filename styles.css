@@ -1,0 +1,41 @@
+ .container {
+            display: flex;
+            width: 100%;
+            min-height: 600px;
+        }
+        .left-side, .right-side {
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .left-side {
+            width: 60%;
+            border-right: 1px solid #ccc;
+        }
+        .right-side {
+            width: 40%;
+        }
+        .section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #fafafa;
+        }
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+        .row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .row label {
+            min-width: 120px;
+            display: inline-block;
+        }
+        .row input, .row select {
+            flex: 1;
+            padding: 5px;
+        }
