@@ -106,9 +106,9 @@
         }
 
         $sql = "INSERT INTO leave_applications 
-                (employee_id, name, division, designation, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation)
+                (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation)
                 VALUES 
-                ('$employee_id', '$name', '$division', '$designation', '$leave_type', '$leave_details', '$working_days', '$inclusive_date_start', '$inclusive_date_end', '$date_filed', '$date_incurred', '$commutation')";
+                ('$employee_id','$leave_type', '$leave_details', '$working_days', '$inclusive_date_start', '$inclusive_date_end', '$date_filed', '$date_incurred', '$commutation')";
         
         if ($conn->query($sql) === TRUE) {
             $message = "<div class='success-message'>Application submitted successfully!</div>";
@@ -266,9 +266,8 @@
 
         <div class="tab-content" id="tab-leavecards">
             <div class="container">
-            <div class="right-side">
-            <?php
-
+                <div class="right-side">
+                <?php
             
             // Get employee_id from URL if set, otherwise fallback to session or default
             if (isset($_GET['employee_id'])) {
@@ -303,114 +302,181 @@
                 exit;
             }
 
-                // Fetch leave records
-                $query = "
-                SELECT 
-                    id,
-                    employee_id,
-                    DATE_FORMAT(date_incurred, '%Y-%m') AS month,
-                    date_filed, date_incurred, leave_type, inclusive_date_start, inclusive_date_end, current_vl, current_sl
-                FROM leave_applications
-                WHERE employee_id = $employee_id
-                ORDER BY date_incurred
-                ";
-                $result = $conn->query($query);
-                $leaves = [];
-                while ($row = $result->fetch_assoc()) {
-                    $start = $row['inclusive_date_start'];
-                    $end = $row['inclusive_date_end'];
-                    if ($start && $end) {
-                    $days = (strtotime($end) - strtotime($start)) / (60 * 60 * 24) + 1;
-                    $days = $days > 0 ? $days : 0;
-                    } else {
-                    $days = '';
-                    }
-                    $row['days'] = $days;
-                    $leaves[$row['month']][] = $row;
-                }
-
-            ?>
-            <script src="script.js"></script>
-            <div class="leave-table-container">
-            
-
-            <?php
-            // Fetch balance_forwarded for this employee
-            $balance_forwarded_vl = 0;
-            $balance_forwarded_sl = 0;
+            // FETCH BALANCE FORWARDED
             $emp_prev_query = "SELECT balance_forwarded_vl, balance_forwarded_sl FROM employee_list WHERE id = $employee_id LIMIT 1";
             $emp_prev_result = $conn->query($emp_prev_query);
+            $balance_forwarded_vl = 0;
+            $balance_forwarded_sl = 0;
             if ($emp_prev_result && $emp_prev_result->num_rows > 0) {
                 $bal_row = $emp_prev_result->fetch_assoc();
                 $balance_forwarded_vl = floatval($bal_row['balance_forwarded_vl']);
                 $balance_forwarded_sl = floatval($bal_row['balance_forwarded_sl']);
             }
-            $emp_curr_query = "SELECT current_vl, current_sl FROM leave_applications WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1";
-            $emp_curr_result = $conn->query($emp_curr_query);
-            if ($emp_curr_result && $emp_curr_result->num_rows > 0) {
-                $bal_row = $emp_curr_result->fetch_assoc();
-                $current_vl = floatval($bal_row['current_vl']);
-                $current_sl = floatval($bal_row['current_sl']);
-            }
-            // Handle Add Credits Earned
+            // FETCH CURRENT BALANCE
+                $emp_curr_query = "SELECT current_vl, current_sl FROM leave_applications WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1";
+                $emp_curr_result = $conn->query($emp_curr_query);
+                if ($emp_curr_result && $emp_curr_result->num_rows > 0) {
+                    $bal_row = $emp_curr_result->fetch_assoc();
+                    $current_vl = floatval($bal_row['current_vl']);
+                    $current_sl = floatval($bal_row['current_sl']);
+                }
+
+                $running_vl = $balance_forwarded_vl;
+                $running_sl = $balance_forwarded_sl;
+
+
+                // HANDLE ADD CREDITS EARNED
             if (isset($_POST['add_credits_earned'])) {
                 $earned_date = $conn->real_escape_string($_POST['earned_date']);
                 $earned_sl = isset($_POST['earned_sl']) ? floatval($_POST['earned_sl']) : 0;
                 $earned_vl = isset($_POST['earned_vl']) ? floatval($_POST['earned_vl']) : 0;
-                // Insert as a special row in leave_applications (or a new table if you want)
-                $sql = "INSERT INTO leave_applications 
-                (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, current_vl, current_sl, is_credit_earned, earned_date)
-                VALUES 
-                ('$employee_id', '', '', 0, NULL, NULL, NULL, NULL, '', 0, 0, 1, '$earned_date')";
 
+                // Get current running balance
+                $current_balance_query = "
+                    SELECT 
+                        COALESCE(
+                            (SELECT current_vl FROM leave_applications 
+                             WHERE employee_id = $employee_id 
+                             ORDER BY 
+                                CASE WHEN earned_date IS NOT NULL THEN earned_date ELSE date_incurred END DESC,
+                                id DESC 
+                             LIMIT 1), 
+                            $balance_forwarded_vl
+                        ) as current_vl,
+                        COALESCE(
+                            (SELECT current_sl FROM leave_applications 
+                             WHERE employee_id = $employee_id 
+                             ORDER BY 
+                                CASE WHEN earned_date IS NOT NULL THEN earned_date ELSE date_incurred END DESC,
+                                id DESC 
+                             LIMIT 1), 
+                            $balance_forwarded_sl
+                        ) as current_sl
+                            ";
+                            $current_balance_result = $conn->query($current_balance_query);
+                            if ($current_balance_result && $current_balance_result->num_rows > 0) {
+                                $balance_row = $current_balance_result->fetch_assoc();
+                                $new_vl = floatval($balance_row['current_vl']) + $earned_vl;
+                                $new_sl = floatval($balance_row['current_sl']) + $earned_sl;
+                            } else {
+                                $new_vl = $balance_forwarded_vl + $earned_vl;
+                                $new_sl = $balance_forwarded_sl + $earned_sl;
+                            }
+                            $sql = "INSERT INTO leave_applications 
+                            (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, current_vl, current_sl, is_credit_earned, earned_date)
+                            VALUES 
+                            ('$employee_id', '', '', 0, NULL, NULL, NULL, NULL, '', $new_vl, $new_sl, 1, '$earned_date')";
 
-                $conn->query($sql);
-                echo "<meta http-equiv='refresh' content='0'>";
-                exit;
+                            $conn->query($sql);
+                            echo "<meta http-equiv='refresh' content='0'>";
+                            exit;
             }
 
-            // Handle Add Leave Row
-            if (isset($_POST['add_leave_row'])) {
-                $leave_date_filed = $conn->real_escape_string($_POST['leave_date_filed']);
-                $leave_type = $conn->real_escape_string($_POST['leave_type']);
-                $leave_date_incurred = $conn->real_escape_string($_POST['leave_date_incurred']);
-                $sql = "INSERT INTO leave_applications 
-                (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, is_credit_earned, current_vl, current_sl, earned_date)
-                VALUES 
-                ('$employee_id','$leave_type', '', 0, NULL, NULL, '$leave_date_filed', '$leave_date_incurred', '', 0, 0, 0, NULL)";
+                // HANDLE ADD LEAVE ROW
+                if (isset($_POST['add_leave_row'])) {
+                    $leave_date_filed = $conn->real_escape_string($_POST['leave_date_filed']);
+                    $leave_type = $conn->real_escape_string($_POST['leave_type']);
+                    $leave_date_incurred = $conn->real_escape_string($_POST['leave_date_incurred']);
+                    $working_days = floatval($_POST['working_days']);
 
-                $conn->query($sql);
-                echo "<meta http-equiv='refresh' content='0'>";
-                exit;
-            }
+                    // Get current running balance
+                    $current_balance_query = "
+                        SELECT 
+                            COALESCE(
+                                (SELECT current_vl FROM leave_applications 
+                                WHERE employee_id = $employee_id 
+                                ORDER BY 
+                                    CASE WHEN earned_date IS NOT NULL THEN earned_date ELSE date_incurred END DESC,
+                                    id DESC 
+                                LIMIT 1), 
+                                $balance_forwarded_vl
+                            ) as current_vl,
+                            COALESCE(
+                                (SELECT current_sl FROM leave_applications 
+                                WHERE employee_id = $employee_id 
+                                ORDER BY 
+                                    CASE WHEN earned_date IS NOT NULL THEN earned_date ELSE date_incurred END DESC,
+                                    id DESC 
+                                LIMIT 1), 
+                                $balance_forwarded_sl
+                            ) as current_sl
+                    ";
+                    $current_balance_result = $conn->query($current_balance_query);
+                    if ($current_balance_result && $current_balance_result->num_rows > 0) {
+                        $balance_row = $current_balance_result->fetch_assoc();
+                        $current_vl = floatval($balance_row['current_vl']);
+                        $current_sl = floatval($balance_row['current_sl']);
+                    } else {
+                        $current_vl = $balance_forwarded_vl;
+                        $current_sl = $balance_forwarded_sl;
+                    }
 
-            // "is_credit_earned" is used as a boolean flag (0 or 1) to distinguish between credits earned rows and leave rows.
+                    // Calculate new balance based on leave type
+                    if ($leave_type == 'VL') {
+                        $new_vl = $current_vl - $working_days;
+                        $new_sl = $current_sl;
+                    } elseif ($leave_type == 'SL') {
+                        $new_vl = $current_vl;
+                        $new_sl = $current_sl - $working_days;
+                    } else {
+                        $new_vl = $current_vl;
+                        $new_sl = $current_sl;
+                    }
 
-            // Fetch all credits earned rows
-            $credits_earned_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND is_credit_earned = 1 ORDER BY earned_date";
-            $credits_earned_result = $conn->query($credits_earned_query);
-            $credits_earned_rows = [];
-            if ($credits_earned_result) {
-                while ($row = $credits_earned_result->fetch_assoc()) {
-                    $credits_earned_rows[] = $row;
+                    $sql = "INSERT INTO leave_applications 
+                    (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, is_credit_earned, current_vl, current_sl, earned_date)
+                    VALUES 
+                    ('$employee_id','$leave_type', '', $working_days, NULL, NULL, '$leave_date_filed', '$leave_date_incurred', '', 0, $new_vl, $new_sl, NULL)";
+
+                    $conn->query($sql);
+                    echo "<meta http-equiv='refresh' content='0'>";
+                    exit;
                 }
-            }
 
-            // Fetch all leave rows (not credits earned)
-            $leave_rows_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND (is_credit_earned IS NULL OR is_credit_earned = 0) ORDER BY date_incurred";
-            $leave_rows_result = $conn->query($leave_rows_query);
-            $leave_rows = [];
-            if ($leave_rows_result) {
-                while ($row = $leave_rows_result->fetch_assoc()) {
-                    $leave_rows[] = $row;
+                // FETCH ALL RECORDS IN CHRONOLOGICAL ORDER
+                $all_records_query = "
+                    SELECT *, 
+                        CASE 
+                            WHEN earned_date IS NOT NULL THEN earned_date 
+                            ELSE date_incurred 
+                        END as sort_date
+                    FROM leave_applications 
+                    WHERE employee_id = $employee_id 
+                    ORDER BY sort_date ASC, id ASC
+                ";
+                $all_records_result = $conn->query($all_records_query);
+                $all_records = [];
+                if ($all_records_result) {
+                    while ($row = $all_records_result->fetch_assoc()) {
+                        $all_records[] = $row;
+                    }
                 }
-            }
 
-            // Calculate running balance
-            $current_vl = $balance_forwarded_vl;
-            $current_sl = $balance_forwarded_sl;
 
-            // Render new table header
+                // FETCH ALL CREDITS EARNED ROWS
+                $credits_earned_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND is_credit_earned = 1 ORDER BY earned_date";
+                $credits_earned_result = $conn->query($credits_earned_query);
+                $credits_earned_rows = [];
+                if ($credits_earned_result) {
+                    while ($row = $credits_earned_result->fetch_assoc()) {
+                        $credits_earned_rows[] = $row;
+                    }
+                }
+
+                // FETCH ALL LEAVE ROWS (NO CREDITS EARNED)
+                $leave_rows_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND (is_credit_earned IS NULL OR is_credit_earned = 0) ORDER BY date_incurred";
+                $leave_rows_result = $conn->query($leave_rows_query);
+                $leave_rows = [];
+                if ($leave_rows_result) {
+                    while ($row = $leave_rows_result->fetch_assoc()) {
+                        $leave_rows[] = $row;
+                    }
+                }
+            ?>
+            <script src="script.js"></script>
+            <div class="leave-table-container">
+            <?php
+
             echo '<br><table class="leave-table" style="margin-top:30px;">
             <tr>
                 <th style="background:#e0e0e0;">Date</th>
@@ -426,61 +492,58 @@
             <tr>
                 <td colspan="3" style="background:#f7f7f7;"><b>Balance Forwarded</b></td>
                 <td colspan="9"></td>
-                <td style="background:#e2f7d6;">'.number_format($balance_forwarded_vl,2).'</td>
-                <td style="background:#e2f7d6;">'.number_format($balance_forwarded_sl,2).'</td>
+                <td style="background:#e2f7d6;">' . number_format($balance_forwarded_vl, 2) . '</td>
+                <td style="background:#e2f7d6;">' . number_format($balance_forwarded_sl, 2) . '</td>
             </tr>
             ';
 
-            // Add credits earned rows
-            foreach ($credits_earned_rows as $row) {
-                $earned_date = htmlspecialchars($row['earned_date']);
-                $earned_vl = isset($row['current_vl']) ? floatval($row['current_vl']) : 0;
-                $earned_sl = isset($row['current_sl']) ? floatval($row['current_sl']) : 0;
-                $current_vl += $earned_vl;
-                $current_sl += $earned_sl;
-                echo '<tr>
-                    <td>'.htmlspecialchars($earned_date).'</td>
-                    <td>'.number_format($earned_sl,2).'</td>
-                    <td>'.number_format($earned_vl,2).'</td>
-                    <td colspan="9" style="text-align:center;">Credits Earned</td>
-                    <td style="background:#e2f7d6;">'.number_format($current_vl,2).'</td>
-                    <td style="background:#e2f7d6;">'.number_format($current_sl,2).'</td>
-                </tr>';
-            }
-
-            // Add leave rows
-            foreach ($leave_rows as $leave) {
-                $leave_type = $leave['leave_type'];
-                $leave_days = isset($leave['working_days']) ? floatval($leave['working_days']) : 0;
-                $vl_incurred = $sl_incurred = 0;
-                if ($leave_type == 'VL') {
-                    $vl_incurred = $leave_days;
-                    $current_vl -= $vl_incurred;
-                } elseif ($leave_type == 'SL') {
-                    $sl_incurred = $leave_days;
-                    $current_sl -= $sl_incurred;
+            // Display all records in chronological order
+            foreach ($all_records as $row) {
+                if (isset($row['is_credit_earned']) && $row['is_credit_earned'] == 1) {
+                    // Credits earned row
+                    $earned_sl = 1.25; // You can make this dynamic if needed
+                    $earned_vl = 1.25; // You can make this dynamic if needed
+                    $earned_date = isset($row['earned_date']) ? $row['earned_date'] : '';
+                    echo '<tr>
+                        <td>'.htmlspecialchars($earned_date).'</td>
+                        <td>'.number_format($earned_sl,2).'</td>
+                        <td>'.number_format($earned_vl,2).'</td>
+                        <td colspan="9" style="text-align:center;">Credits Earned</td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_vl'],2).'</td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_sl'],2).'</td>
+                    </tr>';
+                } else {
+                    // Leave application row
+                    $leave_type = $row['leave_type'];
+                    $leave_days = isset($row['working_days']) ? floatval($row['working_days']) : 0;
+                    $vl_incurred = $sl_incurred = 0;
+                    if ($leave_type == 'VL') {
+                        $vl_incurred = $leave_days;
+                    } elseif ($leave_type == 'SL') {
+                        $sl_incurred = $leave_days;
+                    }
+                    echo '<tr>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td>'.htmlspecialchars($row['date_filed']).'</td>
+                        <td>'.htmlspecialchars($row['date_incurred']).'</td>
+                        <td>'.($vl_incurred ? number_format($vl_incurred,2) : '').'</td>
+                        <td>'.($sl_incurred ? number_format($sl_incurred,2) : '').'</td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_vl'],2).'</td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_sl'],2).'</td>
+                    </tr>';
                 }
-                echo '<tr>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td>'.htmlspecialchars($leave['date_filed']).'</td>
-                    <td>'.htmlspecialchars($leave['date_incurred']).'</td>
-                    <td>'.($vl_incurred ? number_format($vl_incurred,2) : '').'</td>
-                    <td>'.($sl_incurred ? number_format($sl_incurred,2) : '').'</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td style="background:#e2f7d6;">'.number_format($current_vl,2).'</td>
-                    <td style="background:#e2f7d6;">'.number_format($current_sl,2).'</td>
-                </tr>';
             }
             echo '</table>';
             ?>
 
-            <!-- Add Credits Earned Button and Form -->
+             <!-- Add Credits Earned Button and Form -->
             <button onclick="document.getElementById('creditsEarnedForm').style.display='block';">Add Credits Earned</button>
             <div id="creditsEarnedForm" style="display:none; margin:10px 0; padding:10px; background:#f9f9f9; border:1px solid #ccc;">
                 <form method="POST">
@@ -504,6 +567,7 @@
                         </select>
                     </label>
                     <label>Date Incurred: <input type="date" name="leave_date_incurred" required></label>
+                    <label>Working Days: <input type="number" step="0.01" name="working_days" required></label>
                     <button type="submit" name="add_leave_row">Add</button>
                     <button type="button" onclick="document.getElementById('leaveRowForm').style.display='none';">Cancel</button>
                 </form>
