@@ -51,8 +51,11 @@
             $_SESSION['found_employee_division'] = $emp['division'];
             $_SESSION['found_employee_designation'] = $emp['designation'];
             $_SESSION['found_employee_salary'] = $emp['salary'];
+                    header("Location: ?employee_id=" . $emp['id']);
+
             $found_employee = $emp;
             $show_find_form = false;
+
         } else {
             $find_message = "<div style='color:red;'>❌ Employee not found.</div>";
             unset($_SESSION['found_employee_id']);
@@ -64,6 +67,7 @@
     if (isset($_POST['submit_leave'])) {
         if (isset($_SESSION['found_employee_id'])) {
             $employee_id = intval($_SESSION['found_employee_id']);
+            
         } else {
             $employee_id = isset($_POST['employee_id']) ? intval($_POST['employee_id']) : 0;
         }
@@ -76,6 +80,10 @@
                 $row = $emp_res->fetch_assoc();
                 $employee_id = intval($row['id']);
             }
+    if ($conn->query($sql) === TRUE) {
+        header("Location: ".$_SERVER['PHP_SELF']."?submitted=1");
+        exit();
+    }
         }
 
         $leave_type = isset($_POST['leave_type']) ? $conn->real_escape_string($_POST['leave_type']) : '';
@@ -83,6 +91,7 @@
         $working_days = isset($_POST['working_days']) && $_POST['working_days'] !== '' ? intval($_POST['working_days']) : 0;
         $inclusive_date_start = isset($_POST['inclusive_date_start']) ? $conn->real_escape_string($_POST['inclusive_date_start']) : '';
         $inclusive_date_end = isset($_POST['inclusive_date_end']) ? $conn->real_escape_string($_POST['inclusive_date_end']) : '';
+        $date_filed = isset($_POST['date_filed']) ? $conn->real_escape_string($_POST['date_filed']) : '';
         $date_incurred = isset($_POST['date_incurred']) ? $conn->real_escape_string($_POST['date_incurred']) : '';
         $commutation = isset($_POST['commutation']) ? $conn->real_escape_string($_POST['commutation']) : '';
 
@@ -97,9 +106,9 @@
         }
 
         $sql = "INSERT INTO leave_applications 
-                (employee_id, name, division, designation, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_incurred, commutation)
+                (employee_id, name, division, designation, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation)
                 VALUES 
-                ('$employee_id', '$name', '$division', '$designation', '$leave_type', '$leave_details', '$working_days', '$inclusive_date_start', '$inclusive_date_end', '$date_incurred', '$commutation')";
+                ('$employee_id', '$name', '$division', '$designation', '$leave_type', '$leave_details', '$working_days', '$inclusive_date_start', '$inclusive_date_end', '$date_filed', '$date_incurred', '$commutation')";
         
         if ($conn->query($sql) === TRUE) {
             $message = "<div class='success-message'>Application submitted successfully!</div>";
@@ -110,6 +119,7 @@
         }
     }
 ?>
+
 
 <!DOCTYPE html>
 <html>
@@ -150,6 +160,7 @@
         <button type="submit" name="show_find">Find Employee</button>
         <button type="submit" name="show_add">Add Employee</button>
     </form>
+
 
     <?php echo $find_message; ?>
 
@@ -192,6 +203,7 @@
             <div class="tab-content" id="tab-application">
                 <div class="container">
                     <div class="left-side">
+                        <?php if (isset($message)) echo $message; ?>
                         <form method="post" action="">
                             <div class="section">
                                 <div class="section-title">Details of Applications</div>
@@ -199,11 +211,10 @@
                                     <label for="leave_type">Type of Leave:</label>
                                     <select id="leave_type" name="leave_type">
                                         <option value="">Select</option>
-                                        <option value="vacation">Vacation Leave</option>
-                                        <option value="sick">Sick Leave</option>
-                                        <option value="maternity">Maternity Leave</option>
-                                        <option value="paternity">Paternity Leave</option>
-                                        <option value="others">Others</option>
+                                        <option value="VL">Vacation Leave</option>
+                                        <option value="SL">Sick Leave</option>
+                                        <option value="ML">Maternity Leave</option>
+                                        <option value="PL">Paternity Leave</option>
                                     </select>
                                 </div>
                                 <div class="row">
@@ -218,11 +229,11 @@
                                 </div>
                                 <div class="row">
                                     <label for="working_days">No. of Working Days Applied For:</label>
-                                    <input type="date" id="inclusive_date_start" name="inclusive_date_start">
+                                    <input type="text" id="working_days" name="working_days">
                                 </div>
                                 <div class="row">
                                     <label for="inclusive_date_start">Start Date:</label>
-                                    <input type="date" id="inclusive_date_start" name="inclusive_date_start"">
+                                    <input type="date" id="inclusive_date_start" name="inclusive_date_start">
                                 </div>
                                 <div class="row">
                                     <label for="inclusive_date">End Date:</label>
@@ -255,182 +266,255 @@
 
         <div class="tab-content" id="tab-leavecards">
             <div class="container">
-                <div class="right-side">
-                    <?php
-                        $employee_id = 1;
+            <div class="right-side">
+            <?php
 
-                        // Handle update if AJAX POST
-                        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_leave'])) {
-                            $leave_id = intval($_POST['leave_id']);
-                            $date_filed = $conn->real_escape_string($_POST['date_filed']);
-                            $date_incurred = $conn->real_escape_string($_POST['date_incurred']);
-                            $leave_type = $conn->real_escape_string($_POST['leave_type']);
-                            $inclusive_date_start = $conn->real_escape_string($_POST['inclusive_date_start']);
-                            $inclusive_date_end = $conn->real_escape_string($_POST['inclusive_date_end']);
+            
+            // Get employee_id from URL if set, otherwise fallback to session or default
+            if (isset($_GET['employee_id'])) {
+                $employee_id = intval($_GET['employee_id']);
+            } elseif (isset($_SESSION['found_employee_id'])) {
+                $employee_id = intval($_SESSION['found_employee_id']);
+            } else {
+                $employee_id = 1;
+            }
 
-                            $sql = "UPDATE leave_applications SET 
-                                date_filed='$date_filed',
-                                date_incurred='$date_incurred',
-                                leave_type='$leave_type',
-                                inclusive_date_start='$inclusive_date_start',
-                                inclusive_date_end='$inclusive_date_end'
-                                WHERE id=$leave_id AND employee_id=$employee_id";
-                            if ($conn->query($sql)) {
-                                echo 'success';
-                            } else {
-                                echo 'error';
-                            }
-                            exit;
-                        }
+            // Handle update if AJAX POST
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_leave'])) {
+                $leave_id = intval($_POST['leave_id']);
+                $date_filed = $conn->real_escape_string($_POST['date_filed']);
+                $date_incurred = $conn->real_escape_string($_POST['date_incurred']);
+                $leave_type = $conn->real_escape_string($_POST['leave_type']);
+                $inclusive_date_start = $conn->real_escape_string($_POST['inclusive_date_start']);
+                $inclusive_date_end = $conn->real_escape_string($_POST['inclusive_date_end']);
 
-                        // Fetch leave records
-                        $query = "
-                        SELECT 
-                            id,
-                            employee_id,
-                            DATE_FORMAT(date_incurred, '%Y-%m') AS month,
-                            date_filed, date_incurred, leave_type, inclusive_date_start, inclusive_date_end
-                        FROM leave_applications
-                        WHERE employee_id = $employee_id
-                        ORDER BY date_incurred
-                        ";
-                        $result = $conn->query($query);
-                        $leaves = [];
-                        while ($row = $result->fetch_assoc()) {
-                            $start = $row['inclusive_date_start'];
-                            $end = $row['inclusive_date_end'];
-                            if ($start && $end) {
-                                $days = (strtotime($end) - strtotime($start)) / (60 * 60 * 24) + 1;
-                                $days = $days > 0 ? $days : 0;
-                            } else {
-                                $days = '';
-                            }
-                            $row['days'] = $days;
-                            $leaves[$row['month']][] = $row;
-                        }
-                    ?>
+                $sql = "UPDATE leave_applications SET 
+                date_filed='$date_filed',
+                date_incurred='$date_incurred',
+                leave_type='$leave_type',
+                inclusive_date_start='$inclusive_date_start',
+                inclusive_date_end='$inclusive_date_end'
+                WHERE id=$leave_id AND employee_id=$employee_id";
+                if ($conn->query($sql)) {
+                echo 'success';
+                } else {
+                echo 'error';
+                }
+                exit;
+            }
 
-                    <style>
-                        .leave-table-container {
-                            overflow-x: auto;
-                            margin-top: 16px;
-                        }
-                        table.leave-table {
-                            width: 100%;
-                            border-collapse: collapse;
-                            margin-top: 5px;
-                            background: #fff;
-                            font-size: 15px;
-                        }
-                        table.leave-table th, table.leave-table td {
-                            border: 1px solid #bfc9d1;
-                            padding: 8px 10px;
-                            text-align: center;
-                            vertical-align: middle;
-                        }
-                        table.leave-table th {
-                            background: #f4f7fa;
-                            font-weight: bold;
-                        }
-                        table.leave-table tr:nth-child(even) {
-                            background: #f9fbfd;
-                        }
-                        table.leave-table tr.editing td {
-                            background: #f0f8ff;
-                        }
-                        .edit-btn, .save-btn, .cancel-btn {
-                            cursor: pointer;
-                            color: #007bff;
-                            border: none;
-                            background: none;
-                            font-size: 14px;
-                            margin: 0 2px;
-                        }
-                        .edit-btn:hover, .save-btn:hover, .cancel-btn:hover {
-                            text-decoration: underline;
-                        }
-                        input[type="date"], input[type="text"], select {
-                            width: 100%;
-                            box-sizing: border-box;
-                            font-size: 14px;
-                            padding: 2px 4px;
-                        }
-                        details { margin-bottom: 12px; }
-                        summary { font-weight: bold; cursor: pointer; font-size: 16px; }
-                    </style>
-                    <script src = script.js></script>
-                    <div class="leave-table-container">
-                        
-                    <?php
-                        // Table header (shows only once)
-                        echo '<table class="leave-table">
-                            <tr>
-                                <th rowspan="2" style="background:#c6e2e9;">Date Filed</th>
-                                <th rowspan="2" style="background:#b5cdfa;">Date Incurred</th>
-                                <th colspan="6" style="background:#fdf5d6; text-align:center;">Leave Incurred (Days)</th>
-                                <th rowspan="2" style="background:#fdf5d6;">Remarks</th>
-                                <th rowspan="2" style="background:#f4f7fa;"></th>
-                            </tr>
-                            <tr>
-                                <th style="background:#fdf5d6;">VL</th>
-                                <th style="background:#fdf5d6;">SL</th>
-                                <th style="background:#fdf5d6;">SPL</th>
-                                <th style="background:#fdf5d6;">FL</th>
-                                <th style="background:#fdf5d6;">Solo Parent</th>
-                                <th style="background:#fdf5d6;">Others</th>
-                            </tr>
-                        </table>';
+                // Fetch leave records
+                $query = "
+                SELECT 
+                    id,
+                    employee_id,
+                    DATE_FORMAT(date_incurred, '%Y-%m') AS month,
+                    date_filed, date_incurred, leave_type, inclusive_date_start, inclusive_date_end, current_vl, current_sl
+                FROM leave_applications
+                WHERE employee_id = $employee_id
+                ORDER BY date_incurred
+                ";
+                $result = $conn->query($query);
+                $leaves = [];
+                while ($row = $result->fetch_assoc()) {
+                    $start = $row['inclusive_date_start'];
+                    $end = $row['inclusive_date_end'];
+                    if ($start && $end) {
+                    $days = (strtotime($end) - strtotime($start)) / (60 * 60 * 24) + 1;
+                    $days = $days > 0 ? $days : 0;
+                    } else {
+                    $days = '';
+                    }
+                    $row['days'] = $days;
+                    $leaves[$row['month']][] = $row;
+                }
 
-                        $months = [
-                            "2025-01","2025-02","2025-03","2025-04","2025-05","2025-06",
-                            "2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"
-                        ];
+            ?>
+            <script src="script.js"></script>
+            <div class="leave-table-container">
+            
 
-                        foreach ($months as $month) {
-                            echo "<details><summary>".date("F Y", strtotime($month))."</summary>";
-                            echo '<table class="leave-table">';
-                            if (isset($leaves[$month])) {
-                                foreach ($leaves[$month] as $leave) {
-                                    // Determine which column to fill based on leave_type
-                                    $vl = $sl = $spl = $fl = $solo = $others = '';
-                                    switch (strtolower($leave['leave_type'])) {
-                                        case 'vacation': $vl = $leave['days']; break;
-                                        case 'sick': $sl = $leave['days']; break;
-                                        case 'spl': $spl = $leave['days']; break;
-                                        case 'fl': $fl = $leave['days']; break;
-                                        case 'solo parent': $solo = $leave['days']; break;
-                                        default: $others = $leave['days']; break;
-                                    }
-                                    echo "<tr id='row-{$leave['id']}'>
-                                        <td data-field='date_filed'>{$leave['date_filed']}</td>
-                                        <td data-field='date_incurred'>{$leave['date_incurred']}</td>
-                                        <td>".($vl!==''?$vl:'')."</td>
-                                        <td>".($sl!==''?$sl:'')."</td>
-                                        <td>".($spl!==''?$spl:'')."</td>
-                                        <td>".($fl!==''?$fl:'')."</td>
-                                        <td>".($solo!==''?$solo:'')."</td>
-                                        <td>".($others!==''?$others:'')."</td>
-                                        <td></td>
-                                        <td>
-                                            <button class='edit-btn' onclick='editRow({$leave['id']})'>Edit</button>
-                                            <button class='save-btn' style='display:none' onclick='saveRow({$leave['id']})'>Save</button>
-                                            <button class='cancel-btn' style='display:none' onclick='cancelEdit({$leave['id']})'>Cancel</button>
-                                        </td>
-                                        <td style='display:none' data-field='leave_type'>{$leave['leave_type']}</td>
-                                        <td style='display:none' data-field='inclusive_date_start'>{$leave['inclusive_date_start']}</td>
-                                        <td style='display:none' data-field='inclusive_date_end'>{$leave['inclusive_date_end']}</td>
-                                    </tr>";
-                                }
-                            } else {
-                                echo "<tr><td colspan='10' style='text-align:center;'>No leaves filed</td></tr>";
-                            }
-                            echo "</table></details>";
-                        }
+            <?php
+            // Fetch balance_forwarded for this employee
+            $balance_forwarded_vl = 0;
+            $balance_forwarded_sl = 0;
+            $emp_prev_query = "SELECT balance_forwarded_vl, balance_forwarded_sl FROM employee_list WHERE id = $employee_id LIMIT 1";
+            $emp_prev_result = $conn->query($emp_prev_query);
+            if ($emp_prev_result && $emp_prev_result->num_rows > 0) {
+                $bal_row = $emp_prev_result->fetch_assoc();
+                $balance_forwarded_vl = floatval($bal_row['balance_forwarded_vl']);
+                $balance_forwarded_sl = floatval($bal_row['balance_forwarded_sl']);
+            }
+            $emp_curr_query = "SELECT current_vl, current_sl FROM leave_applications WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1";
+            $emp_curr_result = $conn->query($emp_curr_query);
+            if ($emp_curr_result && $emp_curr_result->num_rows > 0) {
+                $bal_row = $emp_curr_result->fetch_assoc();
+                $current_vl = floatval($bal_row['current_vl']);
+                $current_sl = floatval($bal_row['current_sl']);
+            }
+            // Handle Add Credits Earned
+            if (isset($_POST['add_credits_earned'])) {
+                $earned_date = $conn->real_escape_string($_POST['earned_date']);
+                $earned_sl = isset($_POST['earned_sl']) ? floatval($_POST['earned_sl']) : 0;
+                $earned_vl = isset($_POST['earned_vl']) ? floatval($_POST['earned_vl']) : 0;
+                // Insert as a special row in leave_applications (or a new table if you want)
+                $sql = "INSERT INTO leave_applications 
+                (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, current_vl, current_sl, is_credit_earned, earned_date)
+                VALUES 
+                ('$employee_id', '', '', 0, NULL, NULL, NULL, NULL, '', 0, 0, 1, '$earned_date')";
 
-                        $conn->close();
-                    ?>
-                    </div>
-                </div>
+
+                $conn->query($sql);
+                echo "<meta http-equiv='refresh' content='0'>";
+                exit;
+            }
+
+            // Handle Add Leave Row
+            if (isset($_POST['add_leave_row'])) {
+                $leave_date_filed = $conn->real_escape_string($_POST['leave_date_filed']);
+                $leave_type = $conn->real_escape_string($_POST['leave_type']);
+                $leave_date_incurred = $conn->real_escape_string($_POST['leave_date_incurred']);
+                $sql = "INSERT INTO leave_applications 
+                (employee_id, leave_type, leave_details, working_days, inclusive_date_start, inclusive_date_end, date_filed, date_incurred, commutation, is_credit_earned, current_vl, current_sl, earned_date)
+                VALUES 
+                ('$employee_id','$leave_type', '', 0, NULL, NULL, '$leave_date_filed', '$leave_date_incurred', '', 0, 0, 0, NULL)";
+
+                $conn->query($sql);
+                echo "<meta http-equiv='refresh' content='0'>";
+                exit;
+            }
+
+            // "is_credit_earned" is used as a boolean flag (0 or 1) to distinguish between credits earned rows and leave rows.
+
+            // Fetch all credits earned rows
+            $credits_earned_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND is_credit_earned = 1 ORDER BY earned_date";
+            $credits_earned_result = $conn->query($credits_earned_query);
+            $credits_earned_rows = [];
+            if ($credits_earned_result) {
+                while ($row = $credits_earned_result->fetch_assoc()) {
+                    $credits_earned_rows[] = $row;
+                }
+            }
+
+            // Fetch all leave rows (not credits earned)
+            $leave_rows_query = "SELECT * FROM leave_applications WHERE employee_id = $employee_id AND (is_credit_earned IS NULL OR is_credit_earned = 0) ORDER BY date_incurred";
+            $leave_rows_result = $conn->query($leave_rows_query);
+            $leave_rows = [];
+            if ($leave_rows_result) {
+                while ($row = $leave_rows_result->fetch_assoc()) {
+                    $leave_rows[] = $row;
+                }
+            }
+
+            // Calculate running balance
+            $current_vl = $balance_forwarded_vl;
+            $current_sl = $balance_forwarded_sl;
+
+            // Render new table header
+            echo '<br><table class="leave-table" style="margin-top:30px;">
+            <tr>
+                <th style="background:#e0e0e0;">Date</th>
+                <th style="background:#e0e0e0;">Earned SL</th>
+                <th style="background:#e0e0e0;">Earned VL</th>
+                <th style="background:#c6e2e9;">Date Filed</th>
+                <th style="background:#b5cdfa;">Date Incurred</th>
+                <th colspan="6" style="background:#fdf5d6; text-align:center;">Leave Incurred (Days)</th>
+                <th style="background:#fdf5d6;">Remarks</th>
+                <th style="background:#e2f7d6;">Current VL</th>
+                <th style="background:#e2f7d6;">Current SL</th>
+            </tr>
+            <tr>
+                <td colspan="3" style="background:#f7f7f7;"><b>Balance Forwarded</b></td>
+                <td colspan="9"></td>
+                <td style="background:#e2f7d6;">'.number_format($balance_forwarded_vl,2).'</td>
+                <td style="background:#e2f7d6;">'.number_format($balance_forwarded_sl,2).'</td>
+            </tr>
+            ';
+
+            // Add credits earned rows
+            foreach ($credits_earned_rows as $row) {
+                $earned_date = htmlspecialchars($row['earned_date']);
+                $earned_vl = isset($row['current_vl']) ? floatval($row['current_vl']) : 0;
+                $earned_sl = isset($row['current_sl']) ? floatval($row['current_sl']) : 0;
+                $current_vl += $earned_vl;
+                $current_sl += $earned_sl;
+                echo '<tr>
+                    <td>'.htmlspecialchars($earned_date).'</td>
+                    <td>'.number_format($earned_sl,2).'</td>
+                    <td>'.number_format($earned_vl,2).'</td>
+                    <td colspan="9" style="text-align:center;">Credits Earned</td>
+                    <td style="background:#e2f7d6;">'.number_format($current_vl,2).'</td>
+                    <td style="background:#e2f7d6;">'.number_format($current_sl,2).'</td>
+                </tr>';
+            }
+
+            // Add leave rows
+            foreach ($leave_rows as $leave) {
+                $leave_type = $leave['leave_type'];
+                $leave_days = isset($leave['working_days']) ? floatval($leave['working_days']) : 0;
+                $vl_incurred = $sl_incurred = 0;
+                if ($leave_type == 'VL') {
+                    $vl_incurred = $leave_days;
+                    $current_vl -= $vl_incurred;
+                } elseif ($leave_type == 'SL') {
+                    $sl_incurred = $leave_days;
+                    $current_sl -= $sl_incurred;
+                }
+                echo '<tr>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td>'.htmlspecialchars($leave['date_filed']).'</td>
+                    <td>'.htmlspecialchars($leave['date_incurred']).'</td>
+                    <td>'.($vl_incurred ? number_format($vl_incurred,2) : '').'</td>
+                    <td>'.($sl_incurred ? number_format($sl_incurred,2) : '').'</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td style="background:#e2f7d6;">'.number_format($current_vl,2).'</td>
+                    <td style="background:#e2f7d6;">'.number_format($current_sl,2).'</td>
+                </tr>';
+            }
+            echo '</table>';
+            ?>
+
+            <!-- Add Credits Earned Button and Form -->
+            <button onclick="document.getElementById('creditsEarnedForm').style.display='block';">Add Credits Earned</button>
+            <div id="creditsEarnedForm" style="display:none; margin:10px 0; padding:10px; background:#f9f9f9; border:1px solid #ccc;">
+                <form method="POST">
+                    <label>Date (Month Earned): <input type="date" name="earned_date" required></label>
+                    <label>Earned SL: <input type="number" step="0.01" name="earned_sl" value="1.25" required></label>
+                    <label>Earned VL: <input type="number" step="0.01" name="earned_vl" value="1.25" required></label>
+                    <button type="submit" name="add_credits_earned">Add</button>
+                    <button type="button" onclick="document.getElementById('creditsEarnedForm').style.display='none';">Cancel</button>
+                </form>
+            </div>
+
+            <!-- Add Leave Row Button and Form -->
+            <button onclick="document.getElementById('leaveRowForm').style.display='block';">Add Leave Row</button>
+            <div id="leaveRowForm" style="display:none; margin:10px 0; padding:10px; background:#f9f9f9; border:1px solid #ccc;">
+                <form method="POST">
+                    <label>Date Filed: <input type="date" name="leave_date_filed" required></label>
+                    <label>Leave Type: 
+                        <select name="leave_type" required>
+                            <option value="VL">Vacation Leave</option>
+                            <option value="SL">Sick Leave</option>
+                        </select>
+                    </label>
+                    <label>Date Incurred: <input type="date" name="leave_date_incurred" required></label>
+                    <button type="submit" name="add_leave_row">Add</button>
+                    <button type="button" onclick="document.getElementById('leaveRowForm').style.display='none';">Cancel</button>
+                </form>
+            </div>
+            <script>
+                // Optional: Hide forms on page load if JS enabled
+                document.getElementById('creditsEarnedForm').style.display = 'none';
+                document.getElementById('leaveRowForm').style.display = 'none';
+            </script>
+            </div>
+            </div>
             </div>
         </div>
         </body>
