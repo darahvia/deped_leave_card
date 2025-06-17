@@ -535,8 +535,9 @@
                         <td></td>
                         <td></td>
                         <td></td>
-                        <td style="background:#e2f7d6;">'.number_format($row['current_vl'],2).'</td>
-                        <td style="background:#e2f7d6;">'.number_format($row['current_sl'],2).'</td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_vl'] ?? 0, 2).'</td>
+                        <td style="background:#e2f7d6;">'.number_format($row['current_sl'] ?? 0, 2).'</td>
+
                     </tr>';
                 }
             }
